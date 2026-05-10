@@ -110,7 +110,7 @@ def csv_download_button(data_dict, filename, label="📥 Download as CSV", key=N
 
 
 # ──────────────────────────────────────────────────────────────────────
-# Filter UI
+# Filter UI (bosonic only)
 # ──────────────────────────────────────────────────────────────────────
 
 FILTER_SHAPES = [
@@ -383,12 +383,10 @@ def render_snapshot_panel(prefix, x_label, y_label, title):
 
     # CSV download of all snapshots
     buf = io.StringIO()
-    # Header
     buf.write("x," + ",".join(s["label"].replace(",", ";") for s in snaps) + "\n")
     n = max(len(s["x"]) for s in snaps)
     for i in range(n):
         row_vals = []
-        # Use the x of the first snapshot as the reference axis
         if i < len(snaps[0]["x"]):
             row_vals.append(f"{snaps[0]['x'][i]:.6e}")
         else:
@@ -646,11 +644,9 @@ def render_bosonic():
                 else:
                     r6.metric("Poling period Λ", "N/A",
                               help="Bulk crystal — no periodic poling.")
-                # Walk-off length estimate
                 walkoff_um = L_um * np.tan(np.radians(theta_deg))
                 r7.metric("Walk-off ~ L·tan(θ)", f"{walkoff_um:.1f} μm",
                           help="Spatial separation of o- and e-rays at exit.")
-                # Pump coherence time
                 tau_coh_fs = 1.0 / sigma_p_THz * 1000
                 r8.metric("Pump τ_coh ≈ 1/σ", f"{tau_coh_fs:.0f} fs",
                           help="Order-of-magnitude pump coherence time.")
@@ -658,7 +654,6 @@ def render_bosonic():
                 r5, r6, r7, _ = st.columns(4)
                 tau_coh_a = 1.0 / sigma_a_THz * 1000
                 tau_coh_b = 1.0 / sigma_b_THz * 1000
-                # Spectral overlap |<φA|φB>|^2 for two Gaussians
                 sigma_a_rad = sigma_a_THz * 1e12 * 2 * np.pi
                 sigma_b_rad = sigma_b_THz * 1e12 * 2 * np.pi
                 domega = (2*np.pi*const.c/(lambda_a*1e-9) -
@@ -762,14 +757,6 @@ def render_fermionic():
                                   10.0, 1000.0, 100.0, 10.0)
         n_tau = st.slider("τ points", 51, 501, 201, 50, key="fermi_ntau")
 
-        st.divider()
-        e_center_meV = (e0_a_meV + e0_b_meV) / 2
-        use_filter, filtered_jea_fn = filter_ui(
-            prefix="fermi",
-            center_default_nm=e_center_meV,
-            omega_center_default=e_center_meV * 1e-3 * eV,
-        )
-
     # ── Compute ──────────────────────────────────────────────────────
     try:
         jea, ea, eb = independent_jea_function(
@@ -784,13 +771,6 @@ def render_fermionic():
             st.exception(e)
         return
 
-    if use_filter and filtered_jea_fn is not None:
-        try:
-            jea = filtered_jea_fn(jea, ea, eb)
-        except ValueError as e:
-            with col_plot:
-                st.warning(f"Filter warning: {e}")
-
     V_swap      = get_intrinsic_indistinguishability(jea, ea, eb)
     tau_array_s = np.linspace(-tau_max_fs * 1e-15, tau_max_fs * 1e-15, n_tau)
     p_coinc     = hom_coincidence_rate(jea, ea, eb, tau_array_s / hbar,
@@ -798,16 +778,13 @@ def render_fermionic():
 
     snap_label = (f"{shape_a}/{shape_b} | ε₀={e0_a_meV:.1f}/{e0_b_meV:.1f}meV | "
                   f"w={w_a:.1f}/{w_b:.1f} | R={R_bs:.2f}")
-    if use_filter:
-        snap_label += " [filtered]"
 
     # ── Plot tabs ─────────────────────────────────────────────────────
     with col_plot:
         T        = 1 - R_bs
         baseline = T**2 + R_bs**2
         title    = (f"Antibunching peak — "
-                    f"{shape_a.capitalize()} + {shape_b.capitalize()} electrons"
-                    + (" [filtered]" if use_filter else ""))
+                    f"{shape_a.capitalize()} + {shape_b.capitalize()} electrons")
 
         tab_dip, tab_jea, tab_marg, tab_swap = st.tabs([
             "📈 Antibunching peak", "🟦 JEI", "📊 Marginals", "🔄 Swap kernel",
@@ -871,7 +848,6 @@ def render_fermionic():
             r4.metric("plateau (T²+R²)", f"{baseline:.4f}")
 
             r5, r6, r7, _ = st.columns(4)
-            # Coherence times for each shape
             if shape_a == "gaussian":
                 tcoh_a_fs = (hbar / (w_a * 1e-3 * eV)) * 1e15
             elif shape_a == "lorentzian":
