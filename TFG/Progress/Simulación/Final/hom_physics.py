@@ -629,20 +629,31 @@ def plot_delayed_jsa(jsa_matrix, omega_s, omega_i, tau_values=None):
     return fig
 
 
-def hom_coincidence_rate(jsa_matrix, omega_s, omega_i, tau_array,
-                         R=0.5, V_pol=1.0, statistics='boson'):
+def hom_coincidence_rate(jsa_matrix, omega_s, omega_i, tau_array, R=0.5, V_pol=1.0, statistics='boson'):
+    """
+    Coincidence probability vs delay tau.
+    Boson/fermion statistics are encoded in the input JSA/JEA:
+      - bosonic JSA: simple product (no symmetrization needed for product states,
+        or symmetric for entangled states like SPDC)
+      - fermionic JEA: antisymmetric Slater determinant
+    """
     T = 1.0 - R
     dw_s = omega_s[1] - omega_s[0]
     dw_i = omega_i[1] - omega_i[0]
+
     swap_kernel = np.conj(jsa_matrix) * jsa_matrix.T
+
     OS = omega_s[np.newaxis, :]
     OI = omega_i[:, np.newaxis]
-    sign = -1.0 if statistics == 'boson' else +1.0   # bosón: dip; fermión: pico
+
+    sign = -1.0 if statistics == 'boson' else +1.0
+
     rate = np.empty_like(tau_array, dtype=float)
     for k, tau in enumerate(tau_array):
         phase = np.exp(1j * (OI - OS) * tau)
         overlap = np.sum(swap_kernel * phase) * dw_s * dw_i
         rate[k] = (T**2 + R**2) + sign * V_pol * 2.0 * R * T * np.real(overlap)
+
     return rate
 
 
@@ -663,10 +674,9 @@ def gaussian_electron(varepsilon, varepsilon_0, sigma):
 
 
 def lorentzian_electron(varepsilon, varepsilon_F, varepsilon_0, Gamma):
-
     phi = np.where(
         varepsilon >= varepsilon_F,
-        1.0 / (varepsilon - varepsilon_0 + 1j * Gamma / 2),
+        1.0 / np.sqrt((varepsilon - varepsilon_0)**2 + (Gamma / 2)**2),
         0.0
     ).astype(complex)
     return phi
@@ -701,15 +711,14 @@ def independent_jea_function(varepsilon_0a, varepsilon_0b, shape_a, shape_b, par
     phi_a = make_phi(shape_a, varepsilon_0a, params_a)
     phi_b = make_phi(shape_b, varepsilon_0b, params_b)
 
-    # Amplitud PRODUCTO: los dos electrones entran por puertos distintos, así que
-    # la amplitud conjunta es un producto (igual que los fotones independientes).
-    # La antisimetría NO va aquí: entra como el signo del término de interferencia
-    # en hom_coincidence_rate (la anticonmutación de los operadores c).
-    jea_matrix = phi_a[np.newaxis, :] * phi_b[:, np.newaxis]   # shape (N_i, N_s)
+    # Slater determinant on 2D grid
+    E1, E2    = np.meshgrid(varepsilon, varepsilon)
+    PhiA1, PhiA2 = np.meshgrid(phi_a, phi_a)
+    PhiB1, PhiB2 = np.meshgrid(phi_b, phi_b)
 
-    de = varepsilon[1] - varepsilon[0]
+    jea_matrix = phi_a[np.newaxis, :] * phi_b[:, np.newaxis]   # (N_i, N_s)
+    de   = varepsilon[1] - varepsilon[0]
     norm = np.sqrt(np.sum(np.abs(jea_matrix)**2) * de**2)
-
     return jea_matrix / norm, varepsilon, varepsilon
 
 

@@ -203,6 +203,11 @@ def hom_plot(x_values, p_coinc, x_label, title, baseline=0.5):
         mode='lines', line=dict(width=3, color='#636EFA'),
         name='p_coinc',
     ))
+    fig.add_hline(
+        y=baseline, line_dash="dot", line_color="gray",
+        annotation_text="classical baseline",
+        annotation_position="right",
+    )
     fig.update_layout(
         title=title, xaxis_title=x_label,
         yaxis_title="Coincidence probability",
@@ -769,7 +774,7 @@ def render_fermionic():
     V_swap      = get_intrinsic_indistinguishability(jea, ea, eb)
     tau_array_s = np.linspace(-tau_max_fs * 1e-15, tau_max_fs * 1e-15, n_tau)
     p_coinc     = hom_coincidence_rate(jea, ea, eb, tau_array_s / hbar,
-                                        R=R_bs, V_pol=V_pol)
+                                        R=R_bs, V_pol=V_pol, statistics='fermionic')
 
     snap_label = (f"{shape_a}/{shape_b} | ε₀={e0_a_meV:.1f}/{e0_b_meV:.1f}meV | "
                   f"w={w_a:.1f}/{w_b:.1f} | R={R_bs:.2f}")
