@@ -203,11 +203,6 @@ def hom_plot(x_values, p_coinc, x_label, title, baseline=0.5):
         mode='lines', line=dict(width=3, color='#636EFA'),
         name='p_coinc',
     ))
-    fig.add_hline(
-        y=baseline, line_dash="dot", line_color="gray",
-        annotation_text="classical baseline",
-        annotation_position="right",
-    )
     fig.update_layout(
         title=title, xaxis_title=x_label,
         yaxis_title="Coincidence probability",
