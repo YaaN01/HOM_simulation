@@ -1,22 +1,20 @@
 """
 Hong-Ou-Mandel Effect Simulator — Streamlit app.
 
-Cambios respecto a la versión anterior
----------------------------------------
-* Parámetros solo por number_input (sin sliders).
-* Ejes de retardo τ FIJOS y no editables, distintos por pestaña y en unidades
-  físicas realistas: fotones τ_max = 1500 fs; electrones τ_max = 300 ps.
-* Escala electrónica realista (energías en μeV, tiempos en ps), acorde con la
-  óptica cuántica electrónica (paquetes de decenas de ps, energías de decenas
-  de μeV).
-* Convención σ unificada: σ = desviación estándar del espectro de intensidad.
-* JSI: ventana autodimensionada (sin zoom forzado); el zoom es interactivo (Plotly).
-* Visibilidad reportada como el MÍNIMO/MÁXIMO de la curva sobre τ (no en τ=0).
-* Lectura de solapamiento de fotones independientes con la fórmula analítica
-  correcta (coincide con V numérico).
-* Caption fermiónica corregida: estado producto, V≥0, el pico viene del signo + .
-* Registro de datos experimentales (activable) para superponer sobre la curva
-  HOM y cargar sus parámetros en el simulador.
+Características principales
+--------------------------
+* Parámetros físicos mediante number_input (sin sliders), con botón de reset.
+* Eje de retardo τ con rango (mínimo y máximo) EDITABLE junto a la gráfica,
+  por defecto de -1000 a 1000 (fs para fotones, ps para electrones). Es un
+  ajuste de vista, no un parámetro físico, y por eso se sitúa junto a la curva.
+* Escala electrónica realista: energías en μeV, tiempos en ps.
+* Convención de σ unificada: σ = desviación estándar del espectro de intensidad.
+* En el régimen fermiónico la forma del espectro energético es ÚNICA y común a
+  los dos electrones (no se mezclan formas); sus energías y anchuras sí pueden
+  diferir.
+* JSI/JEI con ventana autodimensionada y zoom interactivo (Plotly).
+* Visibilidad reportada como el MÍNIMO (dip) o MÁXIMO (pico) de la curva sobre τ.
+* Todas las figuras se renderizan cuadradas.
 """
 import io
 import numpy as np
@@ -38,63 +36,14 @@ from hom_physics import (
 )
 
 # ──────────────────────────────────────────────────────────────────────
-# Ejes de retardo fijos (no editables) y malla
+# Constantes globales
 # ──────────────────────────────────────────────────────────────────────
-TAU_MAX_PHOTON_FS   = 1500.0    # eje τ de la pestaña de fotones
-TAU_MAX_ELECTRON_PS = 300.0     # eje τ de la pestaña de electrones
-N_TAU               = 351       # nº de puntos en τ (fijo)
-GRID                = 500       # malla espectral para el cálculo
-
-# ══════════════════════════════════════════════════════════════════════
-# REGISTRO DE DATOS EXPERIMENTALES
-# ----------------------------------------------------------------------
-# Rellena estos diccionarios con tus medidas reales. Cada entrada lleva:
-#   "params": valores que se cargarán en el simulador para comparar
-#             (las claves deben ser las del estado de los widgets, ver más abajo).
-#   "tau_fs" / "tau_ps": eje de retardo de los puntos experimentales.
-#   "p_coinc": probabilidad/tasa de coincidencia normalizada de cada punto.
-#
-# Claves de "params" admitidas
-#   Fotones SPDC:     boson_source="SPDC pair", boson_crystal, boson_lp (nm),
-#                     boson_sp (THz), boson_L (μm), boson_R, boson_V
-#   Fotones indep.:   boson_source="Independent photons", boson_la, boson_lb (nm),
-#                     boson_sa, boson_sb (THz), boson_R, boson_V
-#   Electrones:       fermi_shape_a/b ("gaussian"|"lorentzian"|"leviton"),
-#                     fermi_e0_a/b (μeV; no aplica a leviton), fermi_wa/wb
-#                     (μeV para gaussian/lorentzian, ps para leviton),
-#                     fermi_eF (μeV), fermi_R, fermi_V
-#
-# Plantilla (descomenta y edita; deja el dict vacío si aún no hay datos):
-# EXPERIMENTAL_DATASETS = {
-#     "boson": {
-#         "Mi medida BBO-II (2025)": {
-#             "params": {
-#                 "boson_source": "SPDC pair",
-#                 "boson_crystal": "BBO (II)",
-#                 "boson_lp": 405.0, "boson_sp": 1.0, "boson_L": 1000.0,
-#                 "boson_R": 0.5, "boson_V": 1.0,
-#             },
-#             "tau_fs":  [-600, -400, -200, 0, 200, 400, 600],
-#             "p_coinc": [ 0.50,  0.48,  0.43, 0.41, 0.43, 0.48, 0.50],
-#         },
-#     },
-#     "fermion": {
-#         "Mi medida levitones (2025)": {
-#             "params": {
-#                 "fermi_shape_a": "leviton", "fermi_shape_b": "leviton",
-#                 "fermi_wa": 50.0, "fermi_wb": 50.0,
-#                 "fermi_eF": 0.0, "fermi_R": 0.5, "fermi_V": 1.0,
-#             },
-#             "tau_ps":  [-200, -100, 0, 100, 200],
-#             "p_coinc": [ 0.50,  0.62, 0.75, 0.62, 0.50],
-#         },
-#     },
-# }
-EXPERIMENTAL_DATASETS = {
-    "boson": {},
-    "fermion": {},
-}
-
+TAU_DEFAULT_FS = 1000.0    # semiventana τ por defecto, fotones (fs)
+TAU_DEFAULT_PS = 1000.0    # semiventana τ por defecto, electrones (ps)
+TAU_BOUND      = 10000.0   # tope de los campos de rango τ
+N_TAU          = 351       # nº de puntos del barrido en τ
+GRID           = 500       # tamaño de la malla espectral del cálculo
+FIG_SIZE       = 560       # lado (px) de las figuras; se fuerza cuadrado
 
 # ──────────────────────────────────────────────────────────────────────
 # Page setup
@@ -105,9 +54,15 @@ st.caption("Two-particle interference at a beam splitter — Master's thesis sim
 
 
 # ──────────────────────────────────────────────────────────────────────
-# Widgets (solo number_input + reset)
+# Widgets de parámetros (solo number_input + reset)
 # ──────────────────────────────────────────────────────────────────────
 def param_widget(label, key, min_val, max_val, default, step, help_text=""):
+    """Campo numérico con botón de reset al valor por defecto.
+
+    El valor canónico se guarda en st.session_state[key]; el widget usa la clave
+    auxiliar f"{key}_input". No se pasa value= para evitar el aviso de Streamlit
+    "default value + Session State API".
+    """
     input_key = f"{key}_input"
     if key not in st.session_state:
         st.session_state[key] = default
@@ -124,8 +79,6 @@ def param_widget(label, key, min_val, max_val, default, step, help_text=""):
         st.session_state[input_key] = default
         st.rerun()
 
-    # Sin value=: el widget toma su valor de session_state[input_key] (evita el
-    # aviso de "default value + Session State API").
     st.number_input(
         label, min_value=min_val, max_value=max_val, step=step,
         key=input_key, label_visibility="collapsed", on_change=on_input_change,
@@ -134,125 +87,16 @@ def param_widget(label, key, min_val, max_val, default, step, help_text=""):
 
 
 def reset_param(key, default):
+    """Fija un parámetro (valor canónico y compañero _input) a `default`."""
     st.session_state[key] = default
     st.session_state[f"{key}_input"] = default
 
 
 # ──────────────────────────────────────────────────────────────────────
-# Carga de parámetros de un experimento al estado del simulador
-# ──────────────────────────────────────────────────────────────────────
-_PREV_TRACKERS = {
-    "boson_source": "boson_source_prev",
-    "boson_crystal": "boson_crystal_prev",
-    "fermi_shape_a": "fermi_shape_a_prev",
-    "fermi_shape_b": "fermi_shape_b_prev",
-}
-
-def load_experiment_params(params):
-    """Marca los parámetros del experimento para cargarlos en la PRÓXIMA ejecución.
-
-    No se pueden modificar las claves de widgets ya instanciados en la ejecución
-    en curso, así que se aplican al inicio del siguiente run (apply_pending_exp_load),
-    antes de crear los widgets.
-    """
-    st.session_state["_pending_exp_load"] = dict(params)
-    st.rerun()
-
-
-def apply_pending_exp_load():
-    """Aplica los parámetros pendientes (llamar antes de instanciar los widgets).
-
-    Sincroniza el valor canónico, el compañero _input de number_input y los
-    rastreadores *_prev de selectbox/radio para que sus detectores de cambio no
-    reinicien los valores recién cargados.
-    """
-    params = st.session_state.pop("_pending_exp_load", None)
-    if not params:
-        return
-    for k, v in params.items():
-        st.session_state[k] = v
-        st.session_state[f"{k}_input"] = v
-        if k in _PREV_TRACKERS:
-            st.session_state[_PREV_TRACKERS[k]] = v
-
-
-def experimental_overlay_ui(domain):
-    """UI del registro de datos experimentales. Devuelve lista de overlays
-    [{x, y, label}] (en las unidades del eje τ de la pestaña) o lista vacía.
-    """
-    overlays = []
-    datasets = EXPERIMENTAL_DATASETS.get(domain, {})
-
-    with st.expander("🧪 Experimental data overlay", expanded=False):
-        enabled = st.toggle(
-            "Overlay experimental data",
-            key=f"{domain}_exp_on",
-            help="Compare the simulated curve against real measurements. "
-                 "Define datasets in EXPERIMENTAL_DATASETS at the top of the file.",
-        )
-        if not enabled:
-            return overlays
-
-        tau_key = "tau_fs" if domain == "boson" else "tau_ps"
-
-        if datasets:
-            names = list(datasets.keys())
-            chosen = st.multiselect(
-                "Datasets to overlay", names, default=names[:1],
-                key=f"{domain}_exp_pick",
-            )
-            # Cargar parámetros de UNO de ellos en el simulador
-            if chosen:
-                load_target = st.selectbox(
-                    "Match simulator parameters to:", chosen,
-                    key=f"{domain}_exp_loadsel",
-                    help="Sets pump/crystal/etc. (or electron parameters) to the "
-                         "values associated with this dataset, for a fair comparison.",
-                )
-                if st.button("📥 Load this experiment's parameters into the simulator",
-                             key=f"{domain}_exp_load"):
-                    params = datasets[load_target].get("params", {})
-                    if params:
-                        load_experiment_params(params)
-                    else:
-                        st.warning("This dataset has no 'params' block to load.")
-            for name in chosen:
-                ds = datasets[name]
-                if tau_key in ds and "p_coinc" in ds:
-                    overlays.append({
-                        "x": np.asarray(ds[tau_key], dtype=float),
-                        "y": np.asarray(ds["p_coinc"], dtype=float),
-                        "label": name,
-                    })
-        else:
-            st.info("No datasets defined yet. Add them to "
-                    "`EXPERIMENTAL_DATASETS['" + domain + "']` in the source file.")
-
-        # Opción cómoda: subir un CSV (columnas: tau, p) sin tocar el código
-        up = st.file_uploader(
-            f"…or upload a CSV (columns: {tau_key.replace('_', ' ')}, p_coinc)",
-            type=["csv"], key=f"{domain}_exp_csv",
-        )
-        if up is not None:
-            try:
-                raw = np.genfromtxt(up, delimiter=",", names=True)
-                xcol = raw.dtype.names[0]
-                ycol = raw.dtype.names[1]
-                overlays.append({
-                    "x": np.asarray(raw[xcol], dtype=float),
-                    "y": np.asarray(raw[ycol], dtype=float),
-                    "label": f"CSV: {up.name}",
-                })
-            except Exception as e:
-                st.warning(f"Could not parse CSV: {e}")
-
-    return overlays
-
-
-# ──────────────────────────────────────────────────────────────────────
-# CSV download helper
+# Exportación de resultados a CSV
 # ──────────────────────────────────────────────────────────────────────
 def csv_download_button(data_dict, filename, label="📥 Download as CSV", key=None):
+    """Botón de descarga de un conjunto de columnas numéricas como CSV."""
     keys = list(data_dict.keys())
     arrays = [data_dict[k] for k in keys]
     n = len(arrays[0])
@@ -262,6 +106,21 @@ def csv_download_button(data_dict, filename, label="📥 Download as CSV", key=N
         buf.write(",".join(f"{arr[i]:.6e}" for arr in arrays) + "\n")
     st.download_button(label=label, data=buf.getvalue(),
                        file_name=filename, mime="text/csv", key=key)
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Renderizado de figuras (siempre cuadradas)
+# ──────────────────────────────────────────────────────────────────────
+def show_plot(fig):
+    """Renderiza una figura de Plotly con tamaño cuadrado fijo.
+
+    Se usa width=height y use_container_width=False para que las figuras no
+    aparezcan estiradas/aplastadas al ajustarse al ancho del contenedor. En los
+    mapas de calor, además, scaleanchor fuerza una relación de aspecto 1:1 de los
+    datos (ver heatmap helpers).
+    """
+    fig.update_layout(width=FIG_SIZE, height=FIG_SIZE, autosize=False)
+    st.plotly_chart(fig, use_container_width=False)
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -280,6 +139,7 @@ FILTER_HELP = {
 
 
 def filter_ui(prefix, center_default_nm):
+    """Panel de filtrado espectral. Devuelve (activo, función de filtrado | None)."""
     with st.expander("🔧 Spectral filters", expanded=False):
         use_filter = st.toggle(
             "Enable spectral filtering", key=f"{prefix}_filter_on",
@@ -311,6 +171,7 @@ def filter_ui(prefix, center_default_nm):
             fw_i_THz = param_widget("Width (THz)", f"{prefix}_fw_i",
                                     0.01, 10.0, 2.0, 0.01)
 
+        # Conversión a rad/s (la malla interna trabaja en frecuencia angular).
         center_s = 2 * np.pi * const.c / (fc_s_nm * 1e-9)
         center_i = 2 * np.pi * const.c / (fc_i_nm * 1e-9)
         width_s = fw_s_THz * 1e12 * 2 * np.pi
@@ -325,34 +186,65 @@ def filter_ui(prefix, center_default_nm):
 
 
 # ──────────────────────────────────────────────────────────────────────
-# Plot helpers
+# Control del rango del eje de retardo τ (ajuste de vista, no parámetro físico)
 # ──────────────────────────────────────────────────────────────────────
-def hom_plot(x_values, p_coinc, x_label, title, baseline=0.5, overlays=None):
+def delay_axis_range(prefix, unit_label):
+    """Lee el rango τ [min, max] actual desde session_state, inicializándolo a
+    [-1000, +1000] la primera vez. Se llama ANTES de calcular para fijar la
+    ventana del barrido; los widgets que lo editan se dibujan junto a la gráfica
+    con render_delay_axis_widgets(). Devuelve (lo, hi) en la unidad nativa.
+    """
+    lo_key, hi_key = f"{prefix}_tau_min", f"{prefix}_tau_max"
+    if lo_key not in st.session_state:
+        st.session_state[lo_key] = -TAU_DEFAULT_FS if prefix == "boson" else -TAU_DEFAULT_PS
+    if hi_key not in st.session_state:
+        st.session_state[hi_key] = TAU_DEFAULT_FS if prefix == "boson" else TAU_DEFAULT_PS
+    lo = float(st.session_state[lo_key])
+    hi = float(st.session_state[hi_key])
+    if hi <= lo:                       # protección frente a rango degenerado
+        hi = lo + 100.0
+    return lo, hi
+
+
+def render_delay_axis_widgets(prefix, unit_label):
+    """Dibuja los campos de mínimo y máximo del eje τ, junto a la gráfica.
+
+    Se distingue de los parámetros físicos (panel izquierdo) por su posición y
+    por el rótulo: es un ajuste de la ventana de visualización.
+    """
+    st.caption(f"Delay-axis window ({unit_label}) — view setting, not a physical parameter")
+    ca, cb = st.columns(2)
+    with ca:
+        st.number_input(f"τ min ({unit_label})", min_value=-TAU_BOUND, max_value=0.0,
+                        step=100.0, key=f"{prefix}_tau_min")
+    with cb:
+        st.number_input(f"τ max ({unit_label})", min_value=0.0, max_value=TAU_BOUND,
+                        step=100.0, key=f"{prefix}_tau_max")
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Helpers de figuras
+# ──────────────────────────────────────────────────────────────────────
+def hom_plot(x_values, p_coinc, x_label, title, baseline=0.5, x_range=None):
+    """Curva de coincidencias frente al retardo τ."""
     fig = go.Figure()
     fig.add_trace(go.Scatter(
         x=x_values, y=p_coinc, mode='lines',
         line=dict(width=3, color='#636EFA'), name='simulation',
     ))
-    if overlays:
-        palette = ['#EF553B', '#00CC96', '#AB63FA', '#FFA15A', '#FF6692']
-        for k, ov in enumerate(overlays):
-            fig.add_trace(go.Scatter(
-                x=ov["x"], y=ov["y"], mode='markers',
-                marker=dict(size=8, color=palette[k % len(palette)],
-                            line=dict(width=1, color='black')),
-                name=ov["label"],
-            ))
     fig.add_hline(y=baseline, line_dash="dot", line_color="gray",
                   annotation_text="classical baseline", annotation_position="right")
     fig.update_layout(
         title=title, xaxis_title=x_label, yaxis_title="Coincidence probability",
-        template="plotly_white", height=500, yaxis=dict(range=[-0.05, 1.10]),
+        template="plotly_white", yaxis=dict(range=[-0.05, 1.10]),
+        xaxis=dict(range=x_range) if x_range else None,
         legend=dict(orientation="h", y=-0.22),
     )
     return fig
 
 
 def jsa_heatmap(jsa, ws, wi, title="Joint Spectral Intensity |JSA|²"):
+    """Mapa |JSA|² sobre el plano de frecuencias (centrado en la degenerada)."""
     f_center = ws.mean() / (2 * np.pi * 1e12)
     fs = ws / (2 * np.pi * 1e12) - f_center
     fi = wi / (2 * np.pi * 1e12) - f_center
@@ -362,13 +254,14 @@ def jsa_heatmap(jsa, ws, wi, title="Joint Spectral Intensity |JSA|²"):
     ))
     fig.update_layout(
         title=title + "  (drag to zoom)",
-        xaxis_title="Δf_s (THz)", yaxis_title="Δf_i (THz)",
-        template="plotly_white", height=500,
+        xaxis_title="Δf_s (THz)", yaxis_title="Δf_i (THz)", template="plotly_white",
     )
+    fig.update_yaxes(scaleanchor="x", scaleratio=1)   # plano de datos cuadrado
     return fig
 
 
 def marginals_plot(jsa, ws, wi):
+    """Espectros marginales de señal e idler."""
     marginal_s, marginal_i = get_marginal_spectra(jsa, ws, wi)
     f_center = ws.mean() / (2 * np.pi * 1e12)
     fs = ws / (2 * np.pi * 1e12) - f_center
@@ -380,23 +273,25 @@ def marginals_plot(jsa, ws, wi):
                              line=dict(width=2.5, color='#EF553B', dash='dash'), name='Idler'))
     fig.update_layout(title="Marginal spectra", xaxis_title="Δf (THz)",
                       yaxis_title="Intensity (norm.)", template="plotly_white",
-                      height=500, legend=dict(x=0.75, y=0.95))
+                      legend=dict(x=0.75, y=0.95))
     return fig
 
 
 def jea_heatmap(jea, ea, eb, title="Joint Energy Amplitude |JEA|²"):
+    """Mapa |JEA|² sobre el plano de energías (μeV)."""
     ueV = 1e-6 * const.e
     fig = go.Figure(data=go.Heatmap(
         z=np.abs(jea) ** 2, x=ea / ueV, y=eb / ueV, colorscale='Inferno',
         colorbar=dict(title="|JEA|²"), zsmooth='best',
     ))
     fig.update_layout(title=title + "  (drag to zoom)",
-                      xaxis_title="ε_s (μeV)", yaxis_title="ε_i (μeV)",
-                      template="plotly_white", height=500)
+                      xaxis_title="ε_s (μeV)", yaxis_title="ε_i (μeV)", template="plotly_white")
+    fig.update_yaxes(scaleanchor="x", scaleratio=1)
     return fig
 
 
 def electron_marginals_plot(jea, ea, eb):
+    """Espectros marginales de energía de los dos electrones."""
     ueV = 1e-6 * const.e
     marginal_s, marginal_i = get_marginal_spectra(jea, ea, eb)
     fig = go.Figure()
@@ -406,12 +301,12 @@ def electron_marginals_plot(jea, ea, eb):
                              line=dict(width=2.5, color='#EF553B', dash='dash'), name='Electron B'))
     fig.update_layout(title="Marginal energy spectra", xaxis_title="ε (μeV)",
                       yaxis_title="Intensity (norm.)", template="plotly_white",
-                      height=500, legend=dict(x=0.72, y=0.95))
+                      legend=dict(x=0.72, y=0.95))
     return fig
 
 
 def swap_kernel_plot(jsa, ws, wi, axis_unit="THz"):
-    """Re[S(x_s,x_i)] = Re[f*(x_s,x_i)·f(x_i,x_s)], el integrando de V."""
+    """Mapa Re[S] = Re[f*(x_s,x_i)·f(x_i,x_s)], el integrando de la visibilidad V."""
     re_s = np.real(np.conj(jsa) * jsa.T)
     if axis_unit == "THz":
         center = ws.mean() / (2 * np.pi * 1e12)
@@ -428,13 +323,13 @@ def swap_kernel_plot(jsa, ws, wi, axis_unit="THz"):
         colorbar=dict(title="Re[S]"), zsmooth='best',
     ))
     fig.update_layout(title="Swap kernel Re[S] — integrand of V  (drag to zoom)",
-                      xaxis_title=x_label, yaxis_title=y_label,
-                      template="plotly_white", height=500)
+                      xaxis_title=x_label, yaxis_title=y_label, template="plotly_white")
+    fig.update_yaxes(scaleanchor="x", scaleratio=1)
     return fig
 
 
 # ──────────────────────────────────────────────────────────────────────
-# Snapshots (overlay de varias curvas simuladas)
+# Snapshots (superposición de varias curvas simuladas)
 # ──────────────────────────────────────────────────────────────────────
 def init_snapshots(prefix):
     if f"{prefix}_snapshots" not in st.session_state:
@@ -442,12 +337,14 @@ def init_snapshots(prefix):
 
 
 def save_snapshot(prefix, label, x_arr, y_arr):
+    """Guarda la curva actual para poder superponerla con otras."""
     init_snapshots(prefix)
     st.session_state[f"{prefix}_snapshots"].append(
         {"label": label, "x": x_arr.copy(), "y": y_arr.copy()})
 
 
 def render_snapshot_panel(prefix, x_label, y_label, title):
+    """Dibuja todas las instantáneas guardadas superpuestas."""
     init_snapshots(prefix)
     snaps = st.session_state[f"{prefix}_snapshots"]
     if not snaps:
@@ -462,9 +359,9 @@ def render_snapshot_panel(prefix, x_label, y_label, title):
                                  name=snap["label"]))
     fig.add_hline(y=0.5, line_dash="dot", line_color="gray")
     fig.update_layout(title=title, xaxis_title=x_label, yaxis_title=y_label,
-                      template="plotly_white", height=500, yaxis=dict(range=[-0.05, 1.10]),
+                      template="plotly_white", yaxis=dict(range=[-0.05, 1.10]),
                       legend=dict(orientation="v", x=1.02, y=1.0))
-    st.plotly_chart(fig, use_container_width=True)
+    show_plot(fig)
     if st.button("🗑️ Clear snapshots", key=f"{prefix}_clear_snaps"):
         st.session_state[f"{prefix}_snapshots"] = []
         st.rerun()
@@ -476,6 +373,10 @@ def render_snapshot_panel(prefix, x_label, y_label, title):
 def render_bosonic():
     col_params, col_plot = st.columns([1, 2], gap="large")
 
+    # Rango τ (ventana de vista); se lee aquí para usarlo en el cálculo y los
+    # widgets que lo editan se dibujan más abajo, junto a la gráfica.
+    tau_lo, tau_hi = delay_axis_range("boson", "fs")
+
     with col_params:
         st.subheader("Source")
         source = st.radio(
@@ -484,6 +385,7 @@ def render_bosonic():
             help="SPDC: entangled photon pairs from a nonlinear crystal. "
                  "Independent: two separate single-photon sources.",
         )
+        # Al cambiar de fuente, reinicia los parámetros propios de cada modo.
         if st.session_state.get("boson_source_prev") != source:
             st.session_state["boson_source_prev"] = source
             if source == "Independent photons":
@@ -505,6 +407,7 @@ def render_bosonic():
                      "Type-II (BBO-II, KTP-II, PPKTP-II): asymmetric (V<1).",
             )
             default_lp = float(crystal_dict[crystal_name]['std_pump'])
+            # Al cambiar de cristal, reajusta la λ de bombeo a su valor típico.
             if st.session_state.get("boson_crystal_prev") != crystal_name:
                 st.session_state["boson_crystal_prev"] = crystal_name
                 reset_param("boson_lp", default_lp)
@@ -541,17 +444,10 @@ def render_bosonic():
                             help_text="V=1: same polarisation.")
 
         st.divider()
-        st.caption(f"Delay axis τ fixed at ±{TAU_MAX_PHOTON_FS:.0f} fs, "
-                   f"{N_TAU} points (not editable).")
-
-        st.divider()
         use_filter, filtered_jsa_fn = filter_ui("boson", degenerate_nm)
 
-        st.divider()
-        overlays = experimental_overlay_ui("boson")
-
-    # ── Compute ───────────────────────────────────────────────────────
-    tau_array = np.linspace(-TAU_MAX_PHOTON_FS * 1e-15, TAU_MAX_PHOTON_FS * 1e-15, N_TAU)
+    # ── Cálculo ───────────────────────────────────────────────────────
+    tau_array = np.linspace(tau_lo * 1e-15, tau_hi * 1e-15, N_TAU)
 
     if source == "SPDC pair":
         sigma_p = sigma_p_THz * 1e12 * 2 * np.pi
@@ -592,7 +488,7 @@ def render_bosonic():
     p_coinc = hom_coincidence_rate(jsa, ws, wi, tau_array, R=R_bs, V_pol=V_pol,
                                    statistics='boson')
 
-    # ── Plot tabs ─────────────────────────────────────────────────────
+    # ── Gráficas ──────────────────────────────────────────────────────
     with col_plot:
         T = 1 - R_bs
         baseline = T ** 2 + R_bs ** 2
@@ -605,9 +501,9 @@ def render_bosonic():
             ["📈 HOM dip", "🟦 JSI", "📊 Marginals", "🔄 Swap kernel"])
 
         with tab_dip:
-            st.plotly_chart(
-                hom_plot(tau_array * 1e15, p_coinc, "τ (fs)", title, baseline, overlays),
-                use_container_width=True)
+            render_delay_axis_widgets("boson", "fs")
+            show_plot(hom_plot(tau_array * 1e15, p_coinc, "τ (fs)", title,
+                               baseline, x_range=[tau_lo, tau_hi]))
             c1, c2 = st.columns([1, 4])
             if c1.button("📸 Save snapshot", key="boson_save_snap"):
                 save_snapshot("boson", snap_label, tau_array * 1e15, p_coinc)
@@ -618,10 +514,10 @@ def render_bosonic():
                                     key="boson_csv_dip")
 
         with tab_jsa:
-            st.plotly_chart(jsa_heatmap(jsa, ws, wi), use_container_width=True)
+            show_plot(jsa_heatmap(jsa, ws, wi))
 
         with tab_marg:
-            st.plotly_chart(marginals_plot(jsa, ws, wi), use_container_width=True)
+            show_plot(marginals_plot(jsa, ws, wi))
             ms, mi = get_marginal_spectra(jsa, ws, wi)
             f_center = ws.mean() / (2 * np.pi * 1e12)
             csv_download_button(
@@ -630,8 +526,7 @@ def render_bosonic():
                 "marginals.csv", "📥 Download marginals (CSV)", key="boson_csv_marg")
 
         with tab_swap:
-            st.plotly_chart(swap_kernel_plot(jsa, ws, wi, axis_unit="THz"),
-                            use_container_width=True)
+            show_plot(swap_kernel_plot(jsa, ws, wi, axis_unit="THz"))
             st.caption(
                 "**What this shows.** The swap kernel "
                 "Re[S(ω_s,ω_i)] = Re[f*(ω_s,ω_i)·f(ω_i,ω_s)] is the integrand of "
@@ -645,7 +540,7 @@ def render_bosonic():
                       help="Intrinsic spectral indistinguishability at zero delay.")
             r2.metric("Dip visibility", f"{dip_vis:.4f}",
                       help="(baseline − min p)/baseline — the observable dip depth, "
-                           "measured at the minimum of the curve over τ.")
+                           "measured at the minimum of the curve over the τ window.")
             r3.metric("min p(τ)", f"{p_min:.4f}", help=f"at τ = {tau_dip_fs:.0f} fs")
             r4.metric("plateau (T²+R²)", f"{baseline:.4f}")
 
@@ -675,66 +570,61 @@ def render_bosonic():
 # ══════════════════════════════════════════════════════════════════════
 # FERMIONIC tab  (energías en μeV, tiempos en ps)
 # ══════════════════════════════════════════════════════════════════════
+def electron_params(suffix, shape, ueV):
+    """Widgets de un electrón para la forma compartida `shape`.
+
+    Devuelve (e0_ueV, valor_de_anchura, params_dict). El levitón no tiene ε₀
+    (está anclado al nivel de Fermi); gaussiana usa σ y lorentziana usa Γ.
+    """
+    S = suffix.upper()
+    if shape == "leviton":
+        w = param_widget(f"τ₀ {S} (ps)", f"fermi_w{suffix}", 5.0, 1000.0, 50.0, 5.0,
+                         help_text="Leviton width (pinned to ε_F; no ε₀).")
+        return 0.0, w, {'tau_0': w * 1e-12}
+    e0 = param_widget(f"ε₀ {S} (μeV)", f"fermi_e0_{suffix}", 0.0, 200.0, 30.0, 1.0,
+                      help_text="Mean energy above the Fermi level.")
+    if shape == "gaussian":
+        w = param_widget(f"σ {S} (μeV)", f"fermi_w{suffix}", 1.0, 100.0, 10.0, 0.5,
+                         help_text="σ = std of the intensity spectrum.")
+        return e0, w, {'sigma': w * ueV}
+    # lorentziana
+    w = param_widget(f"Γ {S} (μeV)", f"fermi_w{suffix}", 1.0, 100.0, 10.0, 0.5,
+                     help_text="FWHM linewidth.")
+    return e0, w, {'Gamma': w * ueV}
+
+
 def render_fermionic():
     col_params, col_plot = st.columns([1, 2], gap="large")
     ueV = 1e-6 * const.e
     hbar = const.hbar
 
+    tau_lo, tau_hi = delay_axis_range("fermi", "ps")
+
     with col_params:
         st.subheader("Source — product state of two electrons")
-        st.caption("Two single-electron wave packets above the Fermi sea, collided "
-                   "at a quantum point contact. Realistic electron-quantum-optics "
-                   "scale: μeV energies, ps timescales.")
 
-        st.subheader("Electron A")
-        shape_a = st.selectbox(
-            "Shape A", ["gaussian", "lorentzian", "leviton"], key="fermi_shape_a",
-            help="Gaussian: bell. Lorentzian: broad tails (mesoscopic capacitor). "
+        # Forma del espectro energético: ÚNICA y común a los dos electrones.
+        shape = st.selectbox(
+            "Energy-spectrum shape", ["gaussian", "lorentzian", "leviton"],
+            key="fermi_shape",
+            help="Applies to BOTH electrons (no mixing). Gaussian: bell. "
+                 "Lorentzian: broad tails (mesoscopic capacitor). "
                  "Leviton: minimal excitation pinned to the Fermi level.")
-        if st.session_state.get("fermi_shape_a_prev") != shape_a:
-            st.session_state["fermi_shape_a_prev"] = shape_a
-            reset_param("fermi_wa", 50.0 if shape_a == "leviton" else 10.0)
+        # Al cambiar la forma, reinicia las anchuras de ambos electrones.
+        if st.session_state.get("fermi_shape_prev") != shape:
+            st.session_state["fermi_shape_prev"] = shape
+            default_w = 50.0 if shape == "leviton" else 10.0
+            reset_param("fermi_wa", default_w)
+            reset_param("fermi_wb", default_w)
             st.rerun()
 
-        if shape_a == "leviton":
-            w_a = param_widget("τ₀ A (ps)", "fermi_wa", 5.0, 1000.0, 50.0, 5.0,
-                               help_text="Leviton width (pinned to ε_F; no ε₀).")
-            params_a = {'tau_0': w_a * 1e-12}
-            e0_a_ueV = 0.0
-        else:
-            e0_a_ueV = param_widget("ε₀ A (μeV)", "fermi_e0_a", 0.0, 200.0, 30.0, 1.0,
-                                    help_text="Mean energy above the Fermi level.")
-            if shape_a == "gaussian":
-                w_a = param_widget("σ A (μeV)", "fermi_wa", 1.0, 100.0, 10.0, 0.5,
-                                   help_text="σ = std of the intensity spectrum.")
-                params_a = {'sigma': w_a * ueV}
-            else:
-                w_a = param_widget("Γ A (μeV)", "fermi_wa", 1.0, 100.0, 10.0, 0.5,
-                                   help_text="FWHM linewidth.")
-                params_a = {'Gamma': w_a * ueV}
+        st.divider()
+        st.subheader("Electron A")
+        e0_a_ueV, w_a, params_a = electron_params("a", shape, ueV)
 
         st.divider()
         st.subheader("Electron B")
-        shape_b = st.selectbox("Shape B", ["gaussian", "lorentzian", "leviton"],
-                               key="fermi_shape_b")
-        if st.session_state.get("fermi_shape_b_prev") != shape_b:
-            st.session_state["fermi_shape_b_prev"] = shape_b
-            reset_param("fermi_wb", 50.0 if shape_b == "leviton" else 10.0)
-            st.rerun()
-
-        if shape_b == "leviton":
-            w_b = param_widget("τ₀ B (ps)", "fermi_wb", 5.0, 1000.0, 50.0, 5.0,
-                               help_text="Leviton width (pinned to ε_F; no ε₀).")
-            params_b = {'tau_0': w_b * 1e-12}
-            e0_b_ueV = 0.0
-        else:
-            e0_b_ueV = param_widget("ε₀ B (μeV)", "fermi_e0_b", 0.0, 200.0, 30.0, 1.0)
-            if shape_b == "gaussian":
-                w_b = param_widget("σ B (μeV)", "fermi_wb", 1.0, 100.0, 10.0, 0.5)
-                params_b = {'sigma': w_b * ueV}
-            else:
-                w_b = param_widget("Γ B (μeV)", "fermi_wb", 1.0, 100.0, 10.0, 0.5)
-                params_b = {'Gamma': w_b * ueV}
+        e0_b_ueV, w_b, params_b = electron_params("b", shape, ueV)
 
         st.divider()
         eF_ueV = param_widget("Fermi energy ε_F (μeV)", "fermi_eF", 0.0, 100.0, 0.0, 1.0,
@@ -745,17 +635,11 @@ def render_fermionic():
         R_bs = param_widget("Reflectivity R", "fermi_R", 0.0, 1.0, 0.5, 0.01)
         V_pol = param_widget("Spin overlap |V|", "fermi_V", 0.0, 1.0, 1.0, 0.01)
 
-        st.divider()
-        st.caption(f"Delay axis τ fixed at ±{TAU_MAX_ELECTRON_PS:.0f} ps, "
-                   f"{N_TAU} points (not editable).")
-
-        st.divider()
-        overlays = experimental_overlay_ui("fermion")
-
-    # ── Compute ───────────────────────────────────────────────────────
+    # ── Cálculo ───────────────────────────────────────────────────────
     try:
+        # Misma forma para los dos electrones (estado producto φ_a ⊗ φ_b).
         jea, ea, eb = independent_jea_function(
-            e0_a_ueV * ueV, e0_b_ueV * ueV, shape_a, shape_b,
+            e0_a_ueV * ueV, e0_b_ueV * ueV, shape, shape,
             params_a, params_b, varepsilon_F=eF_ueV * ueV, grid_size=GRID)
     except (ValueError, ZeroDivisionError) as e:
         with col_plot:
@@ -764,13 +648,12 @@ def render_fermionic():
         return
 
     V_swap = get_intrinsic_indistinguishability(jea, ea, eb)
-    tau_array_s = np.linspace(-TAU_MAX_ELECTRON_PS * 1e-12,
-                              TAU_MAX_ELECTRON_PS * 1e-12, N_TAU)
+    tau_array_s = np.linspace(tau_lo * 1e-12, tau_hi * 1e-12, N_TAU)
+    # τ se pasa dividido por ħ (la fase es e^{i(ε_i−ε_s)τ/ħ}).
     p_coinc = hom_coincidence_rate(jea, ea, eb, tau_array_s / hbar,
                                    R=R_bs, V_pol=V_pol, statistics='fermionic')
 
-    snap_label = (f"{shape_a}/{shape_b} | "
-                  f"w={w_a:.0f}/{w_b:.0f} | R={R_bs:.2f}")
+    snap_label = f"{shape} | w={w_a:.0f}/{w_b:.0f} | R={R_bs:.2f}"
 
     with col_plot:
         T = 1 - R_bs
@@ -779,16 +662,15 @@ def render_fermionic():
         p_max = float(p_coinc[idx_max])
         tau_peak_ps = tau_array_s[idx_max] * 1e12
         peak_vis = (p_max - baseline) / baseline if baseline > 0 else 0.0
-        title = (f"Antibunching peak — "
-                 f"{shape_a.capitalize()} + {shape_b.capitalize()} electrons")
+        title = f"Antibunching peak — {shape.capitalize()} electrons"
 
         tab_dip, tab_jea, tab_marg, tab_swap = st.tabs(
             ["📈 Antibunching peak", "🟦 JEI", "📊 Marginals", "🔄 Swap kernel"])
 
         with tab_dip:
-            st.plotly_chart(
-                hom_plot(tau_array_s * 1e12, p_coinc, "τ (ps)", title, baseline, overlays),
-                use_container_width=True)
+            render_delay_axis_widgets("fermi", "ps")
+            show_plot(hom_plot(tau_array_s * 1e12, p_coinc, "τ (ps)", title,
+                               baseline, x_range=[tau_lo, tau_hi]))
             c1, c2 = st.columns([1, 4])
             if c1.button("📸 Save snapshot", key="fermi_save_snap"):
                 save_snapshot("fermi", snap_label, tau_array_s * 1e12, p_coinc)
@@ -799,10 +681,10 @@ def render_fermionic():
                                     key="fermi_csv_dip")
 
         with tab_jea:
-            st.plotly_chart(jea_heatmap(jea, ea, eb), use_container_width=True)
+            show_plot(jea_heatmap(jea, ea, eb))
 
         with tab_marg:
-            st.plotly_chart(electron_marginals_plot(jea, ea, eb), use_container_width=True)
+            show_plot(electron_marginals_plot(jea, ea, eb))
             ms, mi = get_marginal_spectra(jea, ea, eb)
             csv_download_button(
                 {"ea_ueV": ea / ueV, "marginal_s": ms / ms.max(),
@@ -810,8 +692,7 @@ def render_fermionic():
                 "electron_marginals.csv", "📥 Download marginals (CSV)", key="fermi_csv_marg")
 
         with tab_swap:
-            st.plotly_chart(swap_kernel_plot(jea, ea, eb, axis_unit="ueV"),
-                            use_container_width=True)
+            show_plot(swap_kernel_plot(jea, ea, eb, axis_unit="ueV"))
             st.caption(
                 "**What this shows.** The swap kernel "
                 "Re[S(ε_s,ε_i)] = Re[f*(ε_s,ε_i)·f(ε_i,ε_s)] is the integrand of the "
@@ -827,18 +708,20 @@ def render_fermionic():
             r1.metric("V (overlap, τ=0)", f"{V_swap:.4f}")
             r2.metric("Peak visibility", f"{peak_vis:.4f}",
                       help="(max p − baseline)/baseline — measured at the maximum "
-                           "of the curve over τ.")
+                           "of the curve over the τ window.")
             r3.metric("max p(τ)", f"{p_max:.4f}", help=f"at τ = {tau_peak_ps:.0f} ps")
             r4.metric("plateau (T²+R²)", f"{baseline:.4f}")
 
             r5, r6, r7, _ = st.columns(4)
-            def tcoh_ps(shape, w):
+
+            def tcoh_ps(w):
+                """Tiempo de coherencia en ps: τ₀ (levitón) o ħ/ancho (gauss/lorentz)."""
                 if shape == "leviton":
                     return w                      # τ₀ ya en ps
-                return (hbar / (w * ueV)) * 1e12  # ℏ/σ o ℏ/Γ en ps
-            r5.metric("τ_coh A", f"{tcoh_ps(shape_a, w_a):.0f} ps")
-            r6.metric("τ_coh B", f"{tcoh_ps(shape_b, w_b):.0f} ps")
-            if shape_a != "leviton" and shape_b != "leviton":
+                return (hbar / (w * ueV)) * 1e12  # ħ/σ o ħ/Γ en ps
+            r5.metric("τ_coh A", f"{tcoh_ps(w_a):.0f} ps")
+            r6.metric("τ_coh B", f"{tcoh_ps(w_b):.0f} ps")
+            if shape != "leviton":
                 r7.metric("Δε / max(width)",
                           f"{abs(e0_a_ueV - e0_b_ueV) / max(w_a, w_b):.2f}",
                           help="Energy detuning normalised to the larger width. "
@@ -856,8 +739,6 @@ def render_fermionic():
 # ══════════════════════════════════════════════════════════════════════
 # Top-level layout
 # ══════════════════════════════════════════════════════════════════════
-apply_pending_exp_load()   # aplica parámetros de experimento pendientes ANTES de los widgets
-
 tab_boson, tab_fermion = st.tabs(["🔵 Bosonic (photons)", "🟠 Fermionic (electrons)"])
 with tab_boson:
     render_bosonic()
