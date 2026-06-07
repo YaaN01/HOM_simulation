@@ -268,9 +268,9 @@ def _estimate_spdc_window(phi_func, omega_p, omega_center, sigma_p, spdc_type, g
     """
     d_fz = _sinc_central_halfwidth(phi_func, omega_p, omega_center, sigma_p)
     span = 1.3 * (d_fz + 3.0 * sigma_p)
-    span = max(span, 4.0 * sigma_p)
+    span = max(span, 6.0 * sigma_p)
     if spdc_type == 1:
-        span = min(span, grid_size * sigma_p / 20.0)   # ~10 celdas por sigma_p (cuadratura rect. fiable)
+        span = min(span, grid_size * sigma_p / 15.0)   # ~10 celdas por sigma_p (cuadratura rect. fiable)
     return span
 
 
