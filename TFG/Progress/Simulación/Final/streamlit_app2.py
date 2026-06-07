@@ -44,6 +44,7 @@ TAU_BOUND      = 10000.0   # tope de los campos de rango τ
 N_TAU          = 351       # nº de puntos del barrido en τ
 GRID           = 500       # tamaño de la malla espectral del cálculo
 FIG_SIZE       = 560       # lado (px) de las figuras; se fuerza cuadrado
+HEATMAP_MAX    = 800       # máx. celdas/eje a Plotly (inerte a GRID=500; protege si se sube N)
 
 # ──────────────────────────────────────────────────────────────────────
 # Page setup
@@ -225,6 +226,17 @@ def render_delay_axis_widgets(prefix, unit_label):
 # ──────────────────────────────────────────────────────────────────────
 # Helpers de figuras
 # ──────────────────────────────────────────────────────────────────────
+def _downsample_heatmap(z, x, y):
+    """Reduce la malla ENVIADA a Plotly (no la del cálculo) para que los mapas
+    de calor sigan siendo fluidos cuando N es grande. Es solo visualización:
+    V, dip y marginales se calculan con la malla completa.
+    """
+    step = max(1, int(np.ceil(z.shape[0] / HEATMAP_MAX)))
+    if step > 1:
+        return z[::step, ::step], x[::step], y[::step]
+    return z, x, y
+
+
 def hom_plot(x_values, p_coinc, x_label, title, baseline=0.5, x_range=None):
     """Curva de coincidencias frente al retardo τ."""
     fig = go.Figure()
@@ -248,8 +260,10 @@ def jsa_heatmap(jsa, ws, wi, title="Joint Spectral Intensity |JSA|²"):
     f_center = ws.mean() / (2 * np.pi * 1e12)
     fs = ws / (2 * np.pi * 1e12) - f_center
     fi = wi / (2 * np.pi * 1e12) - f_center
+    z = np.abs(jsa) ** 2
+    z, fs, fi = _downsample_heatmap(z, fs, fi)
     fig = go.Figure(data=go.Heatmap(
-        z=np.abs(jsa) ** 2, x=fs, y=fi, colorscale='Inferno',
+        z=z, x=fs, y=fi, colorscale='Inferno',
         colorbar=dict(title="|JSA|²"), zsmooth='best',
     ))
     fig.update_layout(
@@ -280,8 +294,10 @@ def marginals_plot(jsa, ws, wi):
 def jea_heatmap(jea, ea, eb, title="Joint Energy Amplitude |JEA|²"):
     """Mapa |JEA|² sobre el plano de energías (μeV)."""
     ueV = 1e-6 * const.e
+    z = np.abs(jea) ** 2
+    z, xa, yb = _downsample_heatmap(z, ea / ueV, eb / ueV)
     fig = go.Figure(data=go.Heatmap(
-        z=np.abs(jea) ** 2, x=ea / ueV, y=eb / ueV, colorscale='Inferno',
+        z=z, x=xa, y=yb, colorscale='Inferno',
         colorbar=dict(title="|JEA|²"), zsmooth='best',
     ))
     fig.update_layout(title=title + "  (drag to zoom)",
@@ -318,8 +334,9 @@ def swap_kernel_plot(jsa, ws, wi, axis_unit="THz"):
         x, y = ws / ueV, wi / ueV
         x_label, y_label = "ε_s (μeV)", "ε_i (μeV)"
     vmax = np.abs(re_s).max()
+    z, x, y = _downsample_heatmap(re_s, x, y)
     fig = go.Figure(data=go.Heatmap(
-        z=re_s, x=x, y=y, colorscale='RdBu_r', zmid=0, zmin=-vmax, zmax=vmax,
+        z=z, x=x, y=y, colorscale='RdBu_r', zmid=0, zmin=-vmax, zmax=vmax,
         colorbar=dict(title="Re[S]"), zsmooth='best',
     ))
     fig.update_layout(title="Swap kernel Re[S] — integrand of V  (drag to zoom)",

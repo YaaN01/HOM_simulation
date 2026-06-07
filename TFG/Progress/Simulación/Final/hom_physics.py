@@ -28,7 +28,6 @@ Convenciones unificadas en esta versión
 import numpy as np
 import scipy.constants as const
 from scipy.optimize import minimize_scalar
-from scipy.integrate import simpson
 
 
 crystal_dict = {
@@ -405,10 +404,19 @@ def apply_filter(jsa_matrix, omega_s, omega_i,
 # ──────────────────────────────────────────────────────────────────────────
 
 def get_marginal_spectra(jsa_matrix, omega_s, omega_i):
-    """Espectros marginales 1D de señal e idler (o electrón A y B)."""
+    """Espectros marginales 1D de señal e idler (o electrón A y B).
+
+    Usa suma rectangular, no Simpson. Los pesos alternantes 4-2-4-2 de Simpson,
+    aplicados a la cresta estrecha y antidiagonal de la JSI —cuyo pico cambia de
+    paridad en cada columna—, inyectan un rizado a frecuencia de Nyquist en la
+    marginal. La suma rectangular no tiene ese término alternante y, además, es
+    la misma cuadratura que la normalización y V.
+    """
     jsi = np.abs(jsa_matrix) ** 2
-    marginal_s = simpson(jsi, x=omega_i, axis=0)   # eje 0 = idler
-    marginal_i = simpson(jsi, x=omega_s, axis=1)   # eje 1 = señal
+    dw_s = omega_s[1] - omega_s[0]
+    dw_i = omega_i[1] - omega_i[0]
+    marginal_s = np.sum(jsi, axis=0) * dw_i   # integra sobre idler (eje 0)
+    marginal_i = np.sum(jsi, axis=1) * dw_s   # integra sobre señal (eje 1)
     return marginal_s, marginal_i
 
 
