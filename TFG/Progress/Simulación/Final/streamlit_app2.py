@@ -668,7 +668,7 @@ def render_fermionic():
     tau_array_s = np.linspace(tau_lo * 1e-12, tau_hi * 1e-12, N_TAU)
     # τ se pasa dividido por ħ (la fase es e^{i(ε_i−ε_s)τ/ħ}).
     p_coinc = hom_coincidence_rate(jea, ea, eb, tau_array_s / hbar,
-                                   R=R_bs, V_pol=V_pol, statistics='fermionic')
+                                   R=R_bs, V_pol=V_pol, statistics='fermion')
 
     snap_label = f"{shape} | w={w_a:.0f}/{w_b:.0f} | R={R_bs:.2f}"
 
@@ -710,14 +710,7 @@ def render_fermionic():
 
         with tab_swap:
             show_plot(swap_kernel_plot(jea, ea, eb, axis_unit="ueV"))
-            st.caption(
-                "**What this shows.** The swap kernel "
-                "Re[S(ε_s,ε_i)] = Re[f*(ε_s,ε_i)·f(ε_i,ε_s)] is the integrand of the "
-                "overlap V, and it is non-negative for this product state (V ≥ 0). "
-                "The fermionic statistics enter not through the kernel's sign but "
-                "through a global sign flip of the interference term (operator "
-                "anticommutation): the **+** sign turns the bosonic dip into the "
-                "antibunching **peak**.")
+            st.caption()
 
         st.divider()
         with st.expander("📋 Numerical readouts", expanded=True):

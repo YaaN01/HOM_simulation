@@ -31,6 +31,7 @@ from scipy.optimize import minimize_scalar
 
 
 crystal_dict = {
+    # ─── BBO (uniaxial, borate) — Kato 1986 ───
     "BBO (I)": {
         "formula": "borate",
         "no_coeffs": [2.7359, 0.01878, 0.01822, 0.01354],
@@ -47,6 +48,7 @@ crystal_dict = {
         "std_pump": 405.0,
         "spdc_type": 2,
     },
+    # ─── KTP / PPKTP (biaxial, Kato_KTP) — Kato & Takaoka 2002 ───
     "KTP (II)": {
         "formula": "kato_ktp",
         "nx_coeffs": [3.29100, 0.04140, 0.03978, 9.35522, 31.45571],
@@ -67,12 +69,60 @@ crystal_dict = {
         "std_pump": 405.0,
         "spdc_type": 2,
     },
+    # ─── LBO (biaxial, borate) — Kato 1990 ───
     "LBO (I)": {
         "formula": "borate",
         "nx_coeffs": [2.4542, 0.01125, 0.01135, 0.01388],
         "ny_coeffs": [2.5390, 0.01277, 0.01189, 0.01848],
         "nz_coeffs": [2.5865, 0.01310, 0.01223, 0.01861],
         "pm_plane": "XY",
+        "is_pp": False,
+        "std_pump": 532.0,
+        "spdc_type": 1,
+    },
+    "LBO (II)": {
+        "formula": "borate",
+        "nx_coeffs": [2.4542, 0.01125, 0.01135, 0.01388],
+        "ny_coeffs": [2.5390, 0.01277, 0.01189, 0.01848],
+        "nz_coeffs": [2.5865, 0.01310, 0.01223, 0.01861],
+        "pm_plane": "YZ",
+        "is_pp": False,
+        "std_pump": 532.0,
+        "spdc_type": 2,
+    },
+    # ─── PPLN (uniaxial, borate) — Edwards & Lawrence 1984, T=T₀ ───
+    "PPLN (I)": {
+        "formula": "borate",
+        "no_coeffs": [4.9048, 0.11775, 0.04753, 0.027153],
+        "ne_coeffs": [4.5820, 0.09921, 0.04448, 0.021940],
+        "is_pp": True,
+        "std_pump": 775.0,
+        "spdc_type": 1,
+    },
+    # ─── KDP (uniaxial, Zernike) — Zernike 1964 ───
+    "KDP (I)": {
+        "formula": "zernike",
+        "no_coeffs": [2.260476, 1.011279e-10, 7.726552e9, 3.249268e6, 2.500000e5],
+        "ne_coeffs": [2.133831, 8.653247e-11, 8.134538e9, 8.069838e5, 2.500000e5],
+        "is_pp": False,
+        "std_pump": 405.0,
+        "spdc_type": 1,
+    },
+    "KDP (II)": {
+        "formula": "zernike",
+        "no_coeffs": [2.260476, 1.011279e-10, 7.726552e9, 3.249268e6, 2.500000e5],
+        "ne_coeffs": [2.133831, 8.653247e-11, 8.134538e9, 8.069838e5, 2.500000e5],
+        "is_pp": False,
+        "std_pump": 405.0,
+        "spdc_type": 2,
+    },
+    # ─── BiBO (biaxial monoclínico, borate) — Umemura, Miyata & Kato 2007 ───
+    "BiBO (I)": {
+        "formula": "borate",
+        "nx_coeffs": [3.16940, 0.03717, 0.03483, 0.01827],    # n_β (medio)
+        "ny_coeffs": [3.07403, 0.03231, 0.03163, 0.013376],   # n_α (ordinario, ‖ b)
+        "nz_coeffs": [3.6545,  0.05112, 0.03713, 0.02261],    # n_γ (máximo)
+        "pm_plane": "XZ",   # acuerdo de fase en plano (010), o=n_α
         "is_pp": False,
         "std_pump": 532.0,
         "spdc_type": 1,
@@ -109,6 +159,9 @@ def get_refractive_index(lambda_x, crystal_name, polarization, theta_rad=0.0):
             return np.sqrt(coeffs[0] + coeffs[1] / (lam_um ** 2 - coeffs[2]) - coeffs[3] * lam_um ** 2)
         elif formula == "kato_ktp":
             return np.sqrt(coeffs[0] + coeffs[1] / (lam_um ** 2 - coeffs[2]) + coeffs[3] / (lam_um ** 2 - coeffs[4]))
+        elif formula == "zernike":
+            nu_sq = (10000.0 / lam_um) ** 2
+            return np.sqrt(coeffs[0] + coeffs[1] * nu_sq / (1.0 - nu_sq / coeffs[2]) + coeffs[3] / (coeffs[4] - nu_sq))
         else:
             raise ValueError(f"Formula '{formula}' no implementada.")
 
