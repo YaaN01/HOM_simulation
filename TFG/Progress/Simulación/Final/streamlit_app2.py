@@ -710,7 +710,6 @@ def render_fermionic():
 
         with tab_swap:
             show_plot(swap_kernel_plot(jea, ea, eb, axis_unit="ueV"))
-            st.caption()
 
         st.divider()
         with st.expander("📋 Numerical readouts", expanded=True):
